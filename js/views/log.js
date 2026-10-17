@@ -1,9 +1,38 @@
 import { get, getAll, put, del, getMeta, setMeta } from '../db.js';
 import { MUSCLE_GROUPS } from '../seed.js';
 import {
-  uid, todayISO, volume, workoutVolume, fmtNum, fmtDate, fmtTime, esc, debounce, toast,
+  uid, todayISO, workoutVolume, fmtNum, fmtDate, fmtTime, esc, debounce, toast,
+  entrySeconds, fmtClock, clockFromDigits, entrySummary,
 } from '../util.js';
 import { exerciseFormHTML, createExerciseFromForm } from './exercises.js';
+
+// Entries come in three shapes: strength sets, timed sets, and a single duration
+// (cardio/yoga). An entry keeps its shape even if its exercise's type changes later.
+const shapeOfType = (type) => (type === 'strength' || type === 'timed' ? type : 'duration');
+const shapeOf = (entry) => (entry.timed ? 'timed' : entry.sets ? 'strength' : 'duration');
+
+function blankEntry(exerciseId, shape) {
+  if (shape === 'strength') return { exerciseId, sets: [{ weight: '', targetReps: '', actualReps: '', done: false }] };
+  if (shape === 'timed') return { exerciseId, timed: true, sets: [{ durationSec: '', done: false }] };
+  return { exerciseId, durationSec: '', distanceMi: '' };
+}
+
+// Start from what was done last time: same number of sets, same weights/times,
+// last time's reps as today's target. Cardio/yoga start blank.
+function entryFromLast(exerciseId, shape, last) {
+  if (shape === 'strength') {
+    return {
+      exerciseId,
+      sets: last.sets.map((s) => ({
+        weight: s.weight, targetReps: s.targetReps || s.actualReps, actualReps: '', done: false,
+      })),
+    };
+  }
+  if (shape === 'timed') {
+    return { exerciseId, timed: true, sets: last.sets.map((s) => ({ durationSec: s.durationSec, done: false })) };
+  }
+  return blankEntry(exerciseId, shape);
+}
 
 // Route: #/log            -> active workout (or "Start workout")
 //        #/log/<id>       -> edit an existing (finished) workout
@@ -48,14 +77,33 @@ export async function render(root, params = []) {
       </div>`;
   }
 
+  function timedRow(s, si) {
+    return `
+      <div class="set-row timed${s.done ? ' done' : ''}" data-si="${si}">
+        <span class="set-num">${si + 1}</span>
+        <input type="text" inputmode="numeric" data-field="durationSec" data-clock value="${esc(fmtClock(s.durationSec))}" placeholder="0:00" aria-label="Set ${si + 1} time">
+        <label class="done-box"><input type="checkbox" data-field="done"${s.done ? ' checked' : ''} aria-label="Set ${si + 1} done"></label>
+        <button class="icon-btn" data-act="del-set" aria-label="Delete set ${si + 1}">×</button>
+      </div>`;
+  }
+
   function card(entry, ei) {
-    const ex = exercises.get(entry.exerciseId) || { name: '(deleted exercise)', type: entry.sets ? 'strength' : 'cardio' };
+    const ex = exercises.get(entry.exerciseId) || { name: '(deleted exercise)' };
     const head = `
       <div class="card-head">
-        <h3>${esc(ex.name)}</h3>
-        ${entry.sets ? `<span class="vol" data-vol>${fmtNum(volume(entry))} lb</span>` : ''}
+        <h3><button class="title-btn" data-act="swap" aria-label="Change exercise (${esc(ex.name)})">${esc(ex.name)}<span class="caret" aria-hidden="true">▾</span></button></h3>
+        ${entry.sets ? `<span class="vol" data-vol>${esc(entrySummary(entry))}</span>` : ''}
         <button class="btn ghost sm danger" data-act="del-entry" aria-label="Remove ${esc(ex.name)}">Remove</button>
       </div>`;
+    if (entry.timed) {
+      return `
+        <section class="card" data-ei="${ei}">
+          ${head}
+          <div class="set-row timed labels"><span>Set</span><span>Time</span><span>✓</span><span></span></div>
+          ${entry.sets.map((s, si) => timedRow(s, si)).join('')}
+          <button class="btn ghost full" data-act="add-set">+ Set</button>
+        </section>`;
+    }
     if (entry.sets) {
       return `
         <section class="card" data-ei="${ei}">
@@ -69,7 +117,7 @@ export async function render(root, params = []) {
       <section class="card" data-ei="${ei}">
         ${head}
         <div class="row2">
-          <label>Duration (min)<input type="text" inputmode="decimal" data-field="durationMin" value="${esc(entry.durationMin)}"></label>
+          <label>Time<input type="text" inputmode="numeric" data-field="durationSec" data-clock value="${esc(fmtClock(entrySeconds(entry)))}" placeholder="0:00"></label>
           <label>Distance (mi)<input type="text" inputmode="decimal" data-field="distanceMi" value="${esc(entry.distanceMi ?? '')}" placeholder="optional"></label>
         </div>
       </section>`;
@@ -107,14 +155,15 @@ export async function render(root, params = []) {
 
   function refreshTotals(ei) {
     const cardEl = root.querySelector(`.card[data-ei="${ei}"] [data-vol]`);
-    if (cardEl) cardEl.textContent = `${fmtNum(volume(workout.entries[ei]))} lb`;
+    if (cardEl) cardEl.textContent = entrySummary(workout.entries[ei]);
     const total = root.querySelector('[data-total]');
     if (total) total.textContent = `${fmtNum(workoutVolume(workout))} lb`;
   }
 
   // ---------- exercise picker (full-screen sheet) ----------
 
-  function openPicker() {
+  // onPick(exerciseId) runs after the sheet closes: add a new entry, or swap an existing one.
+  function openPicker(onPick) {
     const sheet = document.createElement('div');
     sheet.className = 'sheet';
     document.body.appendChild(sheet);
@@ -156,7 +205,7 @@ export async function render(root, params = []) {
     sheet.addEventListener('click', async (ev) => {
       const pick = ev.target.closest('[data-pick]');
       const act = ev.target.closest('[data-act]')?.dataset.act;
-      if (pick) { close(); await addEntry(pick.dataset.pick); }
+      if (pick) { close(); await onPick(pick.dataset.pick); }
       else if (act === 'close') close();
       else if (act === 'new-ex') { creating = true; drawSheet(); sheet.querySelector('input[name=name]').focus(); }
       else if (act === 'cancel-form') { creating = false; drawSheet(); }
@@ -168,15 +217,45 @@ export async function render(root, params = []) {
       if (!ex) return;
       exercises.set(ex.id, ex);
       close();
-      await addEntry(ex.id);
+      await onPick(ex.id);
     });
   }
 
-  async function addEntry(exerciseId) {
+  // Most recent entry for this exercise in any other workout, if it has the same shape.
+  async function lastEntry(exerciseId, shape) {
+    const others = (await getAll('workouts'))
+      .filter((w) => w.id !== workout.id)
+      .sort((a, b) => b.date.localeCompare(a.date) || (b.startedAt || 0) - (a.startedAt || 0));
+    for (const w of others) {
+      const e = w.entries.find((x) => x.exerciseId === exerciseId);
+      if (e) return shapeOf(e) === shape ? e : null;
+    }
+    return null;
+  }
+
+  async function newEntry(exerciseId) {
+    const shape = shapeOfType(exercises.get(exerciseId).type);
+    const last = await lastEntry(exerciseId, shape);
+    return last ? entryFromLast(exerciseId, shape, last) : blankEntry(exerciseId, shape);
+  }
+
+  // Keeps everything typed so far when the new exercise records the same kind of data.
+  async function swapExercise(ei, exerciseId) {
+    const entry = workout.entries[ei];
+    if (entry.exerciseId === exerciseId) return;
     const ex = exercises.get(exerciseId);
-    workout.entries.push(ex.type === 'strength'
-      ? { exerciseId, sets: [{ weight: '', targetReps: '', actualReps: '', done: false }] }
-      : { exerciseId, durationMin: '', distanceMi: '' });
+    if (shapeOfType(ex.type) === shapeOf(entry)) {
+      entry.exerciseId = exerciseId;
+    } else {
+      if (!confirm(`${ex.name} is tracked differently, so this exercise's inputs will be cleared. Continue?`)) return;
+      workout.entries[ei] = await newEntry(exerciseId);
+    }
+    await save();
+    draw();
+  }
+
+  async function addEntry(exerciseId) {
+    workout.entries.push(await newEntry(exerciseId));
     await save();
     draw();
     const cards = root.querySelectorAll('.card');
@@ -199,17 +278,21 @@ export async function render(root, params = []) {
       await save();
       await setMeta('activeWorkoutId', workout.id);
       draw();
-      openPicker();
+      openPicker(addEntry);
     } else if (act === 'pick') {
-      openPicker();
+      openPicker(addEntry);
+    } else if (act === 'swap') {
+      openPicker((id) => swapExercise(ei, id));
     } else if (act === 'add-set') {
-      const sets = workout.entries[ei].sets;
-      const prev = sets[sets.length - 1];
-      sets.push({ weight: prev?.weight ?? '', targetReps: prev?.targetReps ?? '', actualReps: '', done: false });
+      const entry = workout.entries[ei];
+      const prev = entry.sets[entry.sets.length - 1];
+      entry.sets.push(entry.timed
+        ? { durationSec: prev?.durationSec ?? '', done: false }
+        : { weight: prev?.weight ?? '', targetReps: prev?.targetReps ?? '', actualReps: '', done: false });
       await save();
       draw();
       const rows = root.querySelectorAll(`.card[data-ei="${ei}"] .set-row:not(.labels)`);
-      rows[rows.length - 1]?.querySelector('[data-field=actualReps]')?.focus();
+      rows[rows.length - 1]?.querySelector(entry.timed ? '[data-field=durationSec]' : '[data-field=actualReps]')?.focus();
     } else if (act === 'del-set') {
       const si = Number(btn.closest('.set-row').dataset.si);
       workout.entries[ei].sets.splice(si, 1);
@@ -260,14 +343,18 @@ export async function render(root, params = []) {
     if (!field || field === 'done') return;
     const ei = Number(t.closest('.card').dataset.ei);
     const entry = workout.entries[ei];
-    if (entry.sets) {
-      const si = Number(t.closest('.set-row').dataset.si);
-      const s = entry.sets[si];
-      s[field] = t.value.trim();
-      const actual = t.closest('.set-row').querySelector('[data-field=actualReps]');
-      actual.classList.toggle('short', s.actualReps !== '' && s.targetReps !== '' && Number(s.actualReps) < Number(s.targetReps));
+    const target = entry.sets ? entry.sets[Number(t.closest('.set-row').dataset.si)] : entry;
+    if ('clock' in t.dataset) {
+      const { text, sec } = clockFromDigits(t.value);
+      t.value = text;
+      target[field] = sec;
+      delete target.durationMin; // v1 field, superseded by durationSec
     } else {
-      entry[field] = t.value.trim();
+      target[field] = t.value.trim();
+    }
+    if (entry.sets && !entry.timed) {
+      const actual = t.closest('.set-row').querySelector('[data-field=actualReps]');
+      actual.classList.toggle('short', target.actualReps !== '' && target.targetReps !== '' && Number(target.actualReps) < Number(target.targetReps));
     }
     refreshTotals(ei);
     saveSoon();
@@ -275,13 +362,16 @@ export async function render(root, params = []) {
 
   root.onchange = (ev) => {
     const t = ev.target;
+    // Tidy "0:90" into "1:30" once the field is left.
+    if ('clock' in t.dataset) { t.value = fmtClock(clockFromDigits(t.value).sec); return; }
     if (t.dataset.field !== 'done') return;
     const row = t.closest('.set-row');
     const ei = Number(t.closest('.card').dataset.ei);
-    const s = workout.entries[ei].sets[Number(row.dataset.si)];
+    const entry = workout.entries[ei];
+    const s = entry.sets[Number(row.dataset.si)];
     s.done = t.checked;
     // Checking a set off with no actual reps means "hit the target".
-    if (s.done && s.actualReps === '' && s.targetReps !== '') {
+    if (s.done && !entry.timed && s.actualReps === '' && s.targetReps !== '') {
       s.actualReps = s.targetReps;
       row.querySelector('[data-field=actualReps]').value = s.actualReps;
     }

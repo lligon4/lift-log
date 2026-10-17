@@ -1,6 +1,6 @@
 # Lift Log
 
-A mobile-first, offline-capable PWA for logging weightlifting sets (weight, target reps, actual reps), plus cardio and yoga (duration and distance). It has no build step and no dependencies. Data is stored in IndexedDB on your device only.
+A mobile-first, offline-capable PWA for logging weightlifting sets (weight, target reps, actual reps), timed sets (e.g. plank), plus cardio and yoga (duration and distance). It has no build step and no dependencies. Data is stored in IndexedDB on your device only.
 
 ## Run locally
 

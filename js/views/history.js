@@ -1,6 +1,7 @@
 import { getAll, del, getMeta } from '../db.js';
 import {
-  volume, workoutVolume, workoutSetCount, fmtNum, fmtDate, fmtTime, esc, toast,
+  workoutVolume, workoutSetCount, fmtNum, fmtDate, fmtTime, esc, toast,
+  entrySeconds, fmtClock, entrySummary,
 } from '../util.js';
 
 function durationText(w) {
@@ -12,6 +13,14 @@ function durationText(w) {
 
 function entryDetail(entry, ex) {
   const name = esc(ex?.name || '(deleted exercise)');
+  if (entry.timed) {
+    const sets = entry.sets.map((s) => `<li>${esc(fmtClock(s.durationSec) || '–')}</li>`).join('');
+    return `
+      <div class="detail-entry">
+        <div class="detail-name">${name}<span class="muted small">${esc(entrySummary(entry))}</span></div>
+        <ol class="set-list">${sets}</ol>
+      </div>`;
+  }
   if (entry.sets) {
     const sets = entry.sets.map((s) => {
       const short = s.actualReps !== '' && s.targetReps !== '' && Number(s.actualReps) < Number(s.targetReps);
@@ -19,12 +28,13 @@ function entryDetail(entry, ex) {
     }).join('');
     return `
       <div class="detail-entry">
-        <div class="detail-name">${name}<span class="muted small">${fmtNum(volume(entry))} lb</span></div>
+        <div class="detail-name">${name}<span class="muted small">${esc(entrySummary(entry))}</span></div>
         <ol class="set-list">${sets}</ol>
       </div>`;
   }
   const parts = [];
-  if (entry.durationMin !== '' && entry.durationMin != null) parts.push(`${esc(entry.durationMin)} min`);
+  const sec = entrySeconds(entry);
+  if (sec !== '') parts.push(esc(fmtClock(sec)));
   if (entry.distanceMi !== '' && entry.distanceMi != null) parts.push(`${esc(entry.distanceMi)} mi`);
   return `
     <div class="detail-entry">

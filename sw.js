@@ -1,5 +1,5 @@
 // Bump CACHE on every deploy so clients pick up the new app shell.
-const CACHE = 'lift-log-v1.0.0';
+const CACHE = 'lift-log-v1.1.0';
 const SHELL = [
   './',
   'index.html',

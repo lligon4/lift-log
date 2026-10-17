@@ -1,4 +1,4 @@
-import { seedIfEmpty } from './seed.js';
+import { seedIfEmpty, migrate } from './seed.js';
 import * as log from './views/log.js';
 import * as history from './views/history.js';
 import * as exercises from './views/exercises.js';
@@ -28,11 +28,28 @@ async function route() {
   window.scrollTo(0, 0);
 }
 
+// Numeric fields usually hold a value you're adjusting, so put the caret at the end
+// instead of wherever the tap landed. The click pass covers mobile browsers that
+// place the caret after the focus event.
+function caretToEnd(el) {
+  const n = el.value.length;
+  try { el.setSelectionRange(n, n); } catch { /* not a text field */ }
+}
+document.addEventListener('focusin', (ev) => {
+  const el = ev.target;
+  if (!el.matches?.('input[inputmode]')) return;
+  caretToEnd(el);
+  const onClick = () => caretToEnd(el);
+  el.addEventListener('click', onClick, { once: true });
+  el.addEventListener('blur', () => el.removeEventListener('click', onClick), { once: true });
+});
+
 async function boot() {
   if (navigator.storage && navigator.storage.persist) {
     navigator.storage.persisted().then((p) => p || navigator.storage.persist()).catch(() => {});
   }
   await seedIfEmpty();
+  await migrate();
   window.addEventListener('hashchange', route);
   if (!location.hash) location.replace('#/log');
   await route();

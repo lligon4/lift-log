@@ -1,4 +1,4 @@
-import { getAll, putMany } from './db.js';
+import { get, getAll, put, putMany, getMeta, setMeta } from './db.js';
 
 // [id, name, type, muscleGroup, equipment]
 const SEED = [
@@ -29,7 +29,7 @@ const SEED = [
   ['db-lunge', 'Dumbbell Lunge', 'strength', 'Legs', 'dumbbell'],
   ['leg-press', 'Leg Press', 'strength', 'Legs', 'machine'],
   ['calf-raise', 'Calf Raise', 'strength', 'Legs', 'dumbbell'],
-  ['plank', 'Plank', 'flex', 'Core', 'bodyweight'],
+  ['plank', 'Plank', 'timed', 'Core', 'bodyweight'],
   ['hanging-leg-raise', 'Hanging Leg Raise', 'strength', 'Core', 'bodyweight'],
   ['run', 'Run', 'cardio', 'Cardio', 'none'],
   ['bike', 'Bike', 'cardio', 'Cardio', 'none'],
@@ -44,6 +44,17 @@ export async function seedIfEmpty() {
   await putMany('exercises', SEED.map(([id, name, type, muscleGroup, equipment]) => ({
     id, name, type, muscleGroup, equipment, custom: false, archived: false,
   })));
+}
+
+// One-off fixes to the built-in exercises on devices seeded by an older version.
+// Existing workout entries keep their own shape, so nothing logged changes.
+export async function migrate() {
+  const v = (await getMeta('seedVersion')) || 1;
+  if (v < 2) {
+    const plank = await get('exercises', 'plank');
+    if (plank && !plank.custom && plank.type === 'flex') await put('exercises', { ...plank, type: 'timed' });
+  }
+  if (v < 2) await setMeta('seedVersion', 2);
 }
 
 export const MUSCLE_GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Flexibility', 'Other'];

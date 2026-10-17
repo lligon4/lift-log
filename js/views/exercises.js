@@ -2,7 +2,7 @@ import { getAll, put } from '../db.js';
 import { MUSCLE_GROUPS, EQUIPMENT } from '../seed.js';
 import { uid, esc, toast } from '../util.js';
 
-const TYPES = [['strength', 'Strength (sets × reps)'], ['cardio', 'Cardio (time/distance)'], ['flex', 'Yoga / mobility (time)']];
+const TYPES = [['strength', 'Strength (sets × reps)'], ['timed', 'Timed sets (e.g. plank)'], ['cardio', 'Cardio (time/distance)'], ['flex', 'Yoga / mobility (time)']];
 
 function options(list, selected) {
   return list.map((o) => {

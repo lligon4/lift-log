@@ -172,6 +172,17 @@ label > input, label > select, label > textarea { margin-top: 4px; }
   margin-bottom: 8px;
 }
 .card-head h3 { flex: 1; min-width: 0; }
+.title-btn {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  min-height: var(--tap);
+  text-align: left;
+  cursor: pointer;
+}
+.title-btn .caret { margin-left: 6px; font-size: 0.75em; color: var(--muted); }
 .vol { font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ---------- log ---------- */
@@ -190,6 +201,7 @@ label > input, label > select, label > textarea { margin-top: 4px; }
   padding: 4px 0;
   border-radius: 8px;
 }
+.set-row.timed { grid-template-columns: 24px 1fr 44px 32px; }
 .set-row.labels { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 0; }
 .set-row.labels span:first-child { text-align: left; }
 .set-row input[type=text] { text-align: center; padding: 8px 4px; font-variant-numeric: tabular-nums; }

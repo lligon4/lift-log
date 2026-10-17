@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -23,6 +23,44 @@ export function volume(entry) {
 
 export function workoutVolume(w) {
   return w.entries.reduce((sum, e) => sum + volume(e), 0);
+}
+
+// Durations are stored as whole seconds (durationSec). v1 entries stored decimal minutes
+// in durationMin; read those through here so old data keeps working.
+export function entrySeconds(x) {
+  if (x.durationSec !== '' && x.durationSec != null) return x.durationSec;
+  if (x.durationMin !== '' && x.durationMin != null) return Math.round(num(x.durationMin) * 60);
+  return '';
+}
+
+// 75 -> "1:15", 3725 -> "1:02:05", '' -> ''
+export function fmtClock(sec) {
+  if (sec === '' || sec == null) return '';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = String(sec % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+// Timer-style entry from a numeric keypad: digits fill in from the right, so typing
+// "130" gives "1:30". Returns the text to show and the seconds it means.
+export function clockFromDigits(text) {
+  const d = text.replace(/\D/g, '').replace(/^0+/, '').slice(0, 6);
+  if (!d) return { text: '', sec: '' };
+  const p = d.padStart(3, '0');
+  const s = p.slice(-2);
+  const rest = p.slice(0, -2);
+  const h = rest.length > 2 ? rest.slice(0, -2) : '';
+  const m = rest.length > 2 ? rest.slice(-2) : rest;
+  return {
+    text: h ? `${h}:${m}:${s}` : `${m}:${s}`,
+    sec: Number(h || 0) * 3600 + Number(m) * 60 + Number(s),
+  };
+}
+
+export function entrySummary(entry) {
+  if (entry.timed) return fmtClock(entry.sets.reduce((sum, s) => sum + num(s.durationSec), 0));
+  return `${fmtNum(volume(entry))} lb`;
 }
 
 export function workoutSetCount(w) {
