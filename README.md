@@ -19,6 +19,10 @@ Service workers need `localhost` or HTTPS, so opening `index.html` as a `file://
 
 When you change any app file, bump `CACHE` in `sw.js` and `APP_VERSION` in `js/util.js` so installed copies update.
 
+## Templates
+
+Start a workout from a template (Push, Pull, Upper and Lower are built in) and every exercise is added, pre-filled from your last session. The Log screen suggests the next template in the same group. Edit templates under Exercises → Templates, or use **Save as template** on any workout.
+
 ## Backup
 
 Settings → **Export to JSON** downloads everything. **Import** can merge (upsert by id) or replace all data.
@@ -32,6 +36,6 @@ js/app.js            router + boot
 js/db.js             IndexedDB wrapper, export/import
 js/seed.js           default exercise list
 js/util.js           volume math, formatting, helpers
-js/views/*.js        log, history, exercises, settings
+js/views/*.js        log, history, exercises, templates, settings, picker (shared)
 icons/
 ```

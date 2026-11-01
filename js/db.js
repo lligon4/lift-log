@@ -1,5 +1,5 @@
 const DB_NAME = 'fitness-tracker';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise;
 
@@ -15,8 +15,16 @@ function open() {
           ws.createIndex('date', 'date');
         }
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('templates')) db.createObjectStore('templates', { keyPath: 'id' });
       };
-      req.onsuccess = () => resolve(req.result);
+      // An older copy of the app open in another tab/window holds the old version.
+      req.onblocked = () => alert('Lift Log is open somewhere else. Close it there to finish updating.');
+      req.onsuccess = () => {
+        const db = req.result;
+        // A newer copy needs to upgrade: step aside and reload into the new version.
+        db.onversionchange = () => { db.close(); location.reload(); };
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
     });
   }
@@ -79,26 +87,32 @@ export async function exportAll() {
     exportedAt: new Date().toISOString(),
     exercises: await getAll('exercises'),
     workouts: await getAll('workouts'),
+    templates: await getAll('templates'),
   };
 }
 
 // mode: 'replace' wipes existing exercises/workouts first; 'merge' upserts by id.
+// Templates are only replaced when the file has them (pre-v1.2 exports don't).
 export async function importAll(data, mode = 'merge') {
   if (!data || !Array.isArray(data.exercises) || !Array.isArray(data.workouts)) {
     throw new Error('File is not a fitness-tracker export.');
   }
   const db = await open();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(['exercises', 'workouts', 'meta'], 'readwrite');
+    const tx = db.transaction(['exercises', 'workouts', 'templates', 'meta'], 'readwrite');
     const ex = tx.objectStore('exercises');
     const wo = tx.objectStore('workouts');
+    const tp = tx.objectStore('templates');
+    const templates = Array.isArray(data.templates) ? data.templates : null;
     if (mode === 'replace') {
       ex.clear();
       wo.clear();
+      if (templates) tp.clear();
       tx.objectStore('meta').delete('activeWorkoutId');
     }
     data.exercises.forEach((e) => ex.put(e));
     data.workouts.forEach((w) => wo.put(w));
+    templates?.forEach((t) => tp.put(t));
     tx.oncomplete = () => resolve({ exercises: data.exercises.length, workouts: data.workouts.length });
     tx.onerror = () => reject(tx.error);
   });

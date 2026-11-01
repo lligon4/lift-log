@@ -1,10 +1,10 @@
 import { get, getAll, put, del, getMeta, setMeta } from '../db.js';
-import { MUSCLE_GROUPS } from '../seed.js';
 import {
   uid, todayISO, workoutVolume, fmtNum, fmtDate, fmtTime, esc, debounce, toast,
   entrySeconds, fmtClock, clockFromDigits, entrySummary,
 } from '../util.js';
-import { exerciseFormHTML, createExerciseFromForm } from './exercises.js';
+import { openPicker } from './picker.js';
+import { groupTemplates, saveWorkoutAsTemplate } from './templates.js';
 
 // Entries come in three shapes: strength sets, timed sets, and a single duration
 // (cardio/yoga). An entry keeps its shape even if its exercise's type changes later.
@@ -34,12 +34,26 @@ function entryFromLast(exerciseId, shape, last) {
   return blankEntry(exerciseId, shape);
 }
 
+// Suggest the template after the one used last, cycling within its group
+// (Push -> Pull -> Push, Upper -> Lower -> Upper).
+function nextTemplate(groups, workouts) {
+  const all = groups.flatMap(([, list]) => list);
+  if (!all.length) return null;
+  const last = workouts
+    .filter((w) => w.finishedAt && all.some((t) => t.id === w.templateId))
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.startedAt || 0) - (a.startedAt || 0))[0];
+  if (!last) return all[0];
+  const group = groups.find(([, list]) => list.some((t) => t.id === last.templateId))[1];
+  return group[(group.findIndex((t) => t.id === last.templateId) + 1) % group.length];
+}
+
 // Route: #/log            -> active workout (or "Start workout")
 //        #/log/<id>       -> edit an existing (finished) workout
 export async function render(root, params = []) {
   const editId = params[0];
   let workout = null;
   let exercises = new Map();
+  let templates = []; // only loaded for the start screen
 
   async function loadExercises() {
     exercises = new Map((await getAll('exercises')).map((e) => [e.id, e]));
@@ -123,16 +137,41 @@ export async function render(root, params = []) {
       </section>`;
   }
 
-  function draw() {
-    if (!workout) {
-      root.innerHTML = `
-        <header class="page-head"><h1>Log</h1></header>
+  function templateButton(t, next = false) {
+    const names = t.exerciseIds.map((id) => exercises.get(id)?.name).filter(Boolean);
+    return `
+      <li><button class="list-btn tpl-btn" data-start="${esc(t.id)}">
+        <span class="grow">
+          <span><strong>${esc(t.name)}</strong>${next ? ' <span class="tag accent">Next up</span>' : ''}</span>
+          <span class="muted small clamp">${esc(names.join(', ')) || 'No exercises'}</span>
+        </span>
+        <span class="muted small">${names.length}</span>
+      </button></li>`;
+  }
+
+  async function drawStart() {
+    const [tpls, workouts] = await Promise.all([getAll('templates'), getAll('workouts')]);
+    templates = tpls;
+    const groups = groupTemplates(templates);
+    const next = nextTemplate(groups, workouts);
+    root.innerHTML = `
+      <header class="page-head"><h1>Log</h1><span class="muted small">${fmtDate(todayISO())}</span></header>
+      ${next ? `
+        <ul class="list next-up">${templateButton(next, true)}</ul>
+        ${groups.map(([g, list]) => `
+          <h2 class="group-head">${esc(g)}</h2>
+          <ul class="list">${list.map((t) => templateButton(t)).join('')}</ul>`).join('')}
+        <button class="btn secondary full start-empty" data-act="start-empty">Empty workout</button>
+        <a class="btn ghost full" href="#/templates">Manage templates</a>`
+      : `
         <div class="start">
-          <p class="muted">${fmtDate(todayISO())}</p>
-          <button class="btn primary big" data-act="start">Start workout</button>
-        </div>`;
-      return;
-    }
+          <button class="btn primary big" data-act="start-empty">Start workout</button>
+          <p><a class="btn ghost" href="#/templates">Create a template</a></p>
+        </div>`}`;
+  }
+
+  function draw() {
+    if (!workout) return drawStart();
     root.innerHTML = `
       <header class="page-head">
         <h1>${editId ? 'Edit workout' : 'Workout'}</h1>
@@ -145,6 +184,7 @@ export async function render(root, params = []) {
       ${workout.entries.map(card).join('') || '<p class="empty">No exercises yet.</p>'}
       <button class="btn secondary full" data-act="pick">+ Add exercise</button>
       <label class="notes">Notes<textarea data-wfield="notes" rows="2" placeholder="How did it feel?">${esc(workout.notes)}</textarea></label>
+      ${workout.entries.length ? '<button class="btn ghost full" data-act="save-tpl">Save as template</button>' : ''}
       <div class="actions sticky-actions">
         ${editId
           ? '<button class="btn primary full" data-act="done-edit">Done</button>'
@@ -158,67 +198,6 @@ export async function render(root, params = []) {
     if (cardEl) cardEl.textContent = entrySummary(workout.entries[ei]);
     const total = root.querySelector('[data-total]');
     if (total) total.textContent = `${fmtNum(workoutVolume(workout))} lb`;
-  }
-
-  // ---------- exercise picker (full-screen sheet) ----------
-
-  // onPick(exerciseId) runs after the sheet closes: add a new entry, or swap an existing one.
-  function openPicker(onPick) {
-    const sheet = document.createElement('div');
-    sheet.className = 'sheet';
-    document.body.appendChild(sheet);
-    document.body.classList.add('no-scroll');
-    let query = '';
-    let creating = false;
-
-    const close = () => { sheet.remove(); document.body.classList.remove('no-scroll'); };
-    window.addEventListener('hashchange', close, { once: true });
-
-    function drawSheet() {
-      const q = query.toLowerCase();
-      const list = [...exercises.values()]
-        .filter((e) => !e.archived && e.name.toLowerCase().includes(q))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      const groups = MUSCLE_GROUPS.map((g) => [g, list.filter((e) => (e.muscleGroup || 'Other') === g)])
-        .filter(([, l]) => l.length);
-      sheet.querySelector('.sheet-body').innerHTML = creating
-        ? exerciseFormHTML({ name: query })
-        : `${groups.map(([g, l]) => `
-            <h2 class="group-head">${esc(g)}</h2>
-            <ul class="list">${l.map((e) => `
-              <li><button class="list-btn" data-pick="${esc(e.id)}">${esc(e.name)}<span class="muted small">${esc(e.equipment)}</span></button></li>`).join('')}
-            </ul>`).join('') || '<p class="empty">No matches.</p>'}
-           <button class="btn ghost full" data-act="new-ex">+ Create "${esc(query) || 'new exercise'}"</button>`;
-    }
-
-    sheet.innerHTML = `
-      <div class="sheet-head">
-        <input type="search" placeholder="Search exercises" aria-label="Search exercises" autocomplete="off">
-        <button class="btn ghost sm" data-act="close">Close</button>
-      </div>
-      <div class="sheet-body"></div>`;
-    drawSheet();
-
-    const search = sheet.querySelector('input[type=search]');
-    search.addEventListener('input', () => { query = search.value; creating = false; drawSheet(); });
-
-    sheet.addEventListener('click', async (ev) => {
-      const pick = ev.target.closest('[data-pick]');
-      const act = ev.target.closest('[data-act]')?.dataset.act;
-      if (pick) { close(); await onPick(pick.dataset.pick); }
-      else if (act === 'close') close();
-      else if (act === 'new-ex') { creating = true; drawSheet(); sheet.querySelector('input[name=name]').focus(); }
-      else if (act === 'cancel-form') { creating = false; drawSheet(); }
-    });
-
-    sheet.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      const ex = await createExerciseFromForm(ev.target);
-      if (!ex) return;
-      exercises.set(ex.id, ex);
-      close();
-      await onPick(ex.id);
-    });
   }
 
   // Most recent entry for this exercise in any other workout, if it has the same shape.
@@ -266,23 +245,43 @@ export async function render(root, params = []) {
 
   // ---------- events ----------
 
+  async function startWorkout(templateId) {
+    workout = { id: uid(), date: todayISO(), startedAt: Date.now(), finishedAt: null, notes: '', entries: [] };
+    if (templateId) workout.templateId = templateId;
+    await save();
+    await setMeta('activeWorkoutId', workout.id);
+  }
+
   root.onclick = async (ev) => {
+    const startBtn = ev.target.closest('[data-start]');
+    if (startBtn) {
+      const tpl = templates.find((t) => t.id === startBtn.dataset.start);
+      if (!tpl) return;
+      await startWorkout(tpl.id);
+      for (const id of tpl.exerciseIds) {
+        if (exercises.get(id) && !exercises.get(id).archived) workout.entries.push(await newEntry(id));
+      }
+      await save();
+      draw();
+      return;
+    }
     const btn = ev.target.closest('[data-act]');
     if (!btn) return;
     const act = btn.dataset.act;
     const cardEl = btn.closest('.card');
     const ei = cardEl ? Number(cardEl.dataset.ei) : -1;
 
-    if (act === 'start') {
-      workout = { id: uid(), date: todayISO(), startedAt: Date.now(), finishedAt: null, notes: '', entries: [] };
-      await save();
-      await setMeta('activeWorkoutId', workout.id);
+    if (act === 'start-empty') {
+      await startWorkout();
       draw();
-      openPicker(addEntry);
+      openPicker(exercises, addEntry);
     } else if (act === 'pick') {
-      openPicker(addEntry);
+      openPicker(exercises, addEntry);
     } else if (act === 'swap') {
-      openPicker((id) => swapExercise(ei, id));
+      openPicker(exercises, (id) => swapExercise(ei, id));
+    } else if (act === 'save-tpl') {
+      await save();
+      await saveWorkoutAsTemplate(workout);
     } else if (act === 'add-set') {
       const entry = workout.entries[ei];
       const prev = entry.sets[entry.sets.length - 1];
@@ -324,7 +323,7 @@ export async function render(root, params = []) {
       workout = null;
       await del('workouts', id);
       await setMeta('activeWorkoutId', null);
-      draw();
+      await draw();
     } else if (act === 'done-edit') {
       await save();
       toast('Changes saved');
@@ -386,5 +385,5 @@ export async function render(root, params = []) {
     root.innerHTML = '<p class="empty">Workout not found.</p>';
     return;
   }
-  draw();
+  await draw();
 }

@@ -1,5 +1,5 @@
 // Bump CACHE on every deploy so clients pick up the new app shell.
-const CACHE = 'lift-log-v1.1.0';
+const CACHE = 'lift-log-v1.2.0';
 const SHELL = [
   './',
   'index.html',
@@ -13,6 +13,8 @@ const SHELL = [
   'js/views/history.js',
   'js/views/exercises.js',
   'js/views/settings.js',
+  'js/views/templates.js',
+  'js/views/picker.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];

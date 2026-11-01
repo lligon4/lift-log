@@ -3,6 +3,7 @@ import {
   workoutVolume, workoutSetCount, fmtNum, fmtDate, fmtTime, esc, toast,
   entrySeconds, fmtClock, entrySummary,
 } from '../util.js';
+import { saveWorkoutAsTemplate } from './templates.js';
 
 function durationText(w) {
   if (!w.startedAt || !w.finishedAt) return '';
@@ -43,12 +44,14 @@ function entryDetail(entry, ex) {
 }
 
 export async function render(root) {
+  let list = [];
+
   async function draw() {
     const [workouts, exList, activeId] = await Promise.all([
       getAll('workouts'), getAll('exercises'), getMeta('activeWorkoutId'),
     ]);
     const exercises = new Map(exList.map((e) => [e.id, e]));
-    const list = workouts
+    list = workouts
       .filter((w) => w.id !== activeId)
       .sort((a, b) => b.date.localeCompare(a.date) || (b.startedAt || 0) - (a.startedAt || 0));
 
@@ -77,6 +80,7 @@ export async function render(root) {
                   ${w.notes ? `<p class="notes-text">${esc(w.notes)}</p>` : ''}
                   <div class="actions">
                     <button class="btn ghost sm danger" data-act="delete">Delete</button>
+                    <button class="btn ghost sm" data-act="save-tpl">Save as template</button>
                     <a class="btn secondary sm" href="#/log/${esc(w.id)}">Edit</a>
                   </div>
                 </div>
@@ -87,9 +91,14 @@ export async function render(root) {
   }
 
   root.onclick = async (ev) => {
-    const btn = ev.target.closest('[data-act=delete]');
+    const btn = ev.target.closest('[data-act]');
     if (!btn) return;
     const id = btn.closest('[data-id]').dataset.id;
+    if (btn.dataset.act === 'save-tpl') {
+      await saveWorkoutAsTemplate(list.find((w) => w.id === id));
+      return;
+    }
+    if (btn.dataset.act !== 'delete') return;
     if (!confirm('Delete this workout? This cannot be undone.')) return;
     await del('workouts', id);
     toast('Workout deleted');

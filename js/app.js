@@ -3,8 +3,11 @@ import * as log from './views/log.js';
 import * as history from './views/history.js';
 import * as exercises from './views/exercises.js';
 import * as settings from './views/settings.js';
+import * as templates from './views/templates.js';
 
-const routes = { log, history, exercises, settings };
+const routes = { log, history, exercises, settings, templates };
+// Routes that live under another tab.
+const tabFor = { templates: 'exercises' };
 let root = document.getElementById('view');
 
 async function route() {
@@ -15,8 +18,9 @@ async function route() {
 
   const [name = 'log', ...params] = location.hash.replace(/^#\/?/, '').split('/');
   const view = routes[name] || log;
+  const tab = routes[name] ? tabFor[name] || name : 'log';
   document.querySelectorAll('.tabbar a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === (routes[name] ? name : 'log'));
+    a.classList.toggle('active', a.dataset.route === tab);
   });
   root.innerHTML = '';
   try {

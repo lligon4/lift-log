@@ -38,6 +38,15 @@ const SEED = [
   ['stretch', 'Stretching', 'flex', 'Flexibility', 'none'],
 ];
 
+// [id, name, group, exerciseIds]. Push and Pull each cover the whole body:
+// presses + squat on push days, pulls + hinge on pull days.
+const TEMPLATES = [
+  ['tpl-push', 'Push', 'Push / Pull', ['bb-bench', 'ohp', 'back-squat', 'db-incline', 'tricep-pushdown']],
+  ['tpl-pull', 'Pull', 'Push / Pull', ['deadlift', 'pullup', 'bb-row', 'face-pull', 'db-curl']],
+  ['tpl-upper', 'Upper', 'Upper / Lower', ['db-bench', 'db-row', 'db-shoulder-press', 'lat-pulldown', 'hammer-curl']],
+  ['tpl-lower', 'Lower', 'Upper / Lower', ['back-squat', 'rdl', 'db-lunge', 'calf-raise', 'plank']],
+];
+
 export async function seedIfEmpty() {
   const existing = await getAll('exercises');
   if (existing.length) return;
@@ -54,7 +63,12 @@ export async function migrate() {
     const plank = await get('exercises', 'plank');
     if (plank && !plank.custom && plank.type === 'flex') await put('exercises', { ...plank, type: 'timed' });
   }
-  if (v < 2) await setMeta('seedVersion', 2);
+  if (v < 3 && !(await getAll('templates')).length) {
+    await putMany('templates', TEMPLATES.map(([id, name, group, exerciseIds], order) => ({
+      id, name, group, exerciseIds, order,
+    })));
+  }
+  if (v < 3) await setMeta('seedVersion', 3);
 }
 
 export const MUSCLE_GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Flexibility', 'Other'];

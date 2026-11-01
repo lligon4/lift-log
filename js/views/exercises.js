@@ -11,6 +11,12 @@ function options(list, selected) {
   }).join('');
 }
 
+// Exercises | Templates switch shown at the top of both screens.
+export function segmentsHTML(active) {
+  const seg = (route, label) => `<a href="#/${route}"${active === route ? ' class="active" aria-current="page"' : ''}>${label}</a>`;
+  return `<nav class="segments">${seg('exercises', 'Exercises')}${seg('templates', 'Templates')}</nav>`;
+}
+
 // Shared by this view and the log view's exercise picker.
 export function exerciseFormHTML(defaults = {}) {
   return `
@@ -60,6 +66,7 @@ export async function render(root) {
         <h1>Exercises</h1>
         <button class="btn primary sm" data-act="add">+ New</button>
       </header>
+      ${segmentsHTML('exercises')}
       ${adding ? `<div class="card">${exerciseFormHTML()}</div>` : ''}
       <label class="check-inline"><input type="checkbox" data-act="toggle-archived"${showArchived ? ' checked' : ''}> Show archived</label>
       ${groups.map(([g, list]) => `
