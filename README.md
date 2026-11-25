@@ -21,7 +21,7 @@ When you change any app file, bump `CACHE` in `sw.js` and `APP_VERSION` in `js/u
 
 ## Templates
 
-Start a workout from a template (Push, Pull, Upper and Lower are built in) and every exercise is added, pre-filled from your last session. The Log screen suggests the next template in the same group. Edit templates under Exercises → Templates, or use **Save as template** on any workout.
+Start a workout from a template and every exercise is added, pre-filled from your last session (last time's weights, with the reps you actually completed as the target). Built in: Push / Pull (A and B), Upper / Lower (A and B), and two full-body days (kettlebell, and dumbbell + band), all using dumbbells, a barbell, kettlebells, bands and bodyweight. The Log screen suggests the next template in the same group. Edit templates under Exercises → Templates, or use **Save as template** on any workout.
 
 ## Backup
 

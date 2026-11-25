@@ -18,13 +18,14 @@ function blankEntry(exerciseId, shape) {
 }
 
 // Start from what was done last time: same number of sets, same weights/times,
-// last time's reps as today's target. Cardio/yoga start blank.
+// and the reps actually completed as today's target (falling back to last
+// time's target for a set that was never filled in). Cardio/yoga start blank.
 function entryFromLast(exerciseId, shape, last) {
   if (shape === 'strength') {
     return {
       exerciseId,
       sets: last.sets.map((s) => ({
-        weight: s.weight, targetReps: s.targetReps || s.actualReps, actualReps: '', done: false,
+        weight: s.weight, targetReps: s.actualReps || s.targetReps, actualReps: '', done: false,
       })),
     };
   }
@@ -245,9 +246,9 @@ export async function render(root, params = []) {
 
   // ---------- events ----------
 
-  async function startWorkout(templateId) {
+  async function startWorkout(tpl) {
     workout = { id: uid(), date: todayISO(), startedAt: Date.now(), finishedAt: null, notes: '', entries: [] };
-    if (templateId) workout.templateId = templateId;
+    if (tpl) Object.assign(workout, { templateId: tpl.id, templateName: tpl.name });
     await save();
     await setMeta('activeWorkoutId', workout.id);
   }
@@ -257,7 +258,7 @@ export async function render(root, params = []) {
     if (startBtn) {
       const tpl = templates.find((t) => t.id === startBtn.dataset.start);
       if (!tpl) return;
-      await startWorkout(tpl.id);
+      await startWorkout(tpl);
       for (const id of tpl.exerciseIds) {
         if (exercises.get(id) && !exercises.get(id).archived) workout.entries.push(await newEntry(id));
       }

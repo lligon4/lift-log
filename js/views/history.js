@@ -47,9 +47,10 @@ export async function render(root) {
   let list = [];
 
   async function draw() {
-    const [workouts, exList, activeId] = await Promise.all([
-      getAll('workouts'), getAll('exercises'), getMeta('activeWorkoutId'),
+    const [workouts, exList, activeId, templates] = await Promise.all([
+      getAll('workouts'), getAll('exercises'), getMeta('activeWorkoutId'), getAll('templates'),
     ]);
+    const templateNames = new Map(templates.map((t) => [t.id, t.name]));
     const exercises = new Map(exList.map((e) => [e.id, e]));
     list = workouts
       .filter((w) => w.id !== activeId)
@@ -62,6 +63,8 @@ export async function render(root) {
       <ul class="list history">
         ${list.map((w) => {
           const names = [...new Set(w.entries.map((e) => exercises.get(e.exerciseId)?.name || '?'))];
+          // Current name if the template still exists (it may have been renamed), else the name it had.
+          const tplName = w.templateId && (templateNames.get(w.templateId) || w.templateName);
           const sets = workoutSetCount(w);
           const vol = workoutVolume(w);
           return `
@@ -72,7 +75,9 @@ export async function render(root) {
                     <strong>${fmtDate(w.date)}</strong>
                     <span class="muted small">${[fmtTime(w.startedAt), durationText(w)].filter(Boolean).join(' · ')}</span>
                   </div>
-                  <div class="h-names">${esc(names.join(', ')) || '<span class="muted">Empty workout</span>'}</div>
+                  <div class="h-names">${tplName
+                    ? `<span class="tag">Template</span> ${esc(tplName)}`
+                    : esc(names.join(', ')) || '<span class="muted">Empty workout</span>'}</div>
                   <div class="h-stats muted small">${sets} set${sets === 1 ? '' : 's'} · ${fmtNum(vol)} lb</div>
                 </summary>
                 <div class="detail">
